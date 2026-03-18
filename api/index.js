@@ -1,52 +1,86 @@
 import axios from 'axios';
 
 export default async function handler(req, res) {
-  // 1. 立即回覆 LINE 200 OK，這是解決 500 錯誤的最關鍵一步
-  if (req.method === 'GET') {
-    return res.status(200).send('山城 AI 伺服器運行中！');
-  }
-  res.status(200).send('OK');
 
-  if (req.method !== 'POST') return;
+  if (req.method === 'GET') {
+    return res.status(200).send('OK');
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(200).send('OK');
+  }
 
   try {
     const CONFIG = {
       LINE_TOKEN: 'exVu9fkC4DNhM3JTltui9/R7xMozMnunSK/ZlJ0BCXS4DiSy016baxEsVOJhQb1J+6ShanxwpO+LO/2favp/++vkfy13zYEGULSO5fDg4qvsyZpIUTWDvT11pKVjT7gdK5oTu1YAEPKeOVKI3gQA9QdB04t89/1O/w1cDnyilFU=',
       GEMINI_KEY: 'AIzaSyB3gGr3mBA3tnN-1OWRKQWK5CV-ZWYbYdg',
-      // 已鎖定您的 ID，只有您傳訊息 AI 才會回覆
       ALLOWED_USERS: ['U4eccd9d2320aaf36fd1a72442612d860']
     };
 
     const events = req.body.events;
-    if (!events || !events[0] || events[0].type !== 'message') return;
+    if (!events || !events.length) {
+      return res.status(200).send('NO EVENT');
+    }
 
     const event = events[0];
+
+    if (event.type !== 'message' || event.message.type !== 'text') {
+      return res.status(200).send('NOT TEXT');
+    }
+
     const userId = event.source.userId;
     const userMsg = event.message.text;
 
-    // 身分驗證鎖：防止外人消耗您的 API 額度
+    // 🔒 限制使用者
     if (!CONFIG.ALLOWED_USERS.includes(userId)) {
-      console.log("攔截未授權使用者:", userId);
-      return;
+      return res.status(200).send('BLOCKED');
     }
 
-    // 2. 呼叫 Gemini AI
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${CONFIG.GEMINI_KEY}`;
-    const aiRes = await axios.post(geminiUrl, {
-      contents: [{ parts: [{ text: `你是山城 AI 股票分析師，請簡短分析：${userMsg}` }] }]
-    });
+    let replyText = "⚠️ 系統忙碌中";
 
-    const replyText = aiRes.data.candidates[0].content.parts[0].text;
+    try {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.GEMINI_KEY}`;
 
-    // 3. 回傳訊息給您的 LINE
-    await axios.post('https://api.line.me/v2/bot/message/reply', {
-      replyToken: event.replyToken,
-      messages: [{ type: 'text', text: replyText }]
-    }, { 
-      headers: { 'Authorization': `Bearer ${CONFIG.LINE_TOKEN}` } 
-    });
+      const aiRes = await axios.post(geminiUrl, {
+        contents: [
+          {
+            parts: [
+              {
+                text: `你是台股短線分析師，請簡短分析：${userMsg}`
+              }
+            ]
+          }
+        ]
+      });
+
+      replyText =
+        aiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+        "⚠️ AI 無回應";
+
+    } catch (err) {
+      console.log("Gemini錯誤:", err.message);
+      replyText = "❌ AI 分析失敗";
+    }
+
+    // ✅ 一定回 LINE（最重要）
+    await axios.post(
+      'https://api.line.me/v2/bot/message/reply',
+      {
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: replyText }]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${CONFIG.LINE_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
 
   } catch (err) {
-    console.error("系統出錯:", err.message);
+    console.log("系統錯誤:", err.message);
   }
+
+  // ✅ 最後才回 200
+  return res.status(200).send('DONE');
 }
