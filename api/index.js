@@ -5,8 +5,8 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'POST') {
       const CONFIG = {
-        LINE_TOKEN: 'exVu9fkC4DNhM3JTltui9/R7xMozMnunSK/ZlJ0BCXS4DiSy016baxEsVOJhQb1J+6ShanxwpO+LO/2favp/++vkfy13zYEGULSO5fDg4qvsyZpIUTWDvT11pKVjT7gdK5oTu1YAEPKeOVKI3gQA9QdB04t89/1O/w1cDnyilFU=',
-        GEMINI_KEY: 'AIzaSyB3gGr3mBA3tnN-1OWRKQWK5CV-ZWYbYdg'
+        LINE_TOKEN: process.env.LINE_TOKEN,
+        GEMINI_KEY: process.env.GEMINI_KEY
       };
 
       const events = req.body.events;
@@ -22,17 +22,17 @@ export default async function handler(req, res) {
 
         const replyText = aiRes.data.candidates[0].content.parts[0].text;
 
-        // 回傳給使用者
+        // 回傳給使用者（修正：使用正確的 LINE API Header）
         await axios.post('https://api.line.me/v2/bot/message/reply', {
           replyToken: event.replyToken,
           messages: [{ type: 'text', text: replyText }]
-        }, { headers: { Authorization: `Bearer ${CONFIG.LINE_TOKEN}` } });
+        }, { headers: { 'X-Line-ChannelAccessToken': CONFIG.LINE_TOKEN } });
       }
     }
     // 確保最後一定會送出 200
     res.status(200).send('OK');
   } catch (error) {
-    console.error(error);
+    console.error('Error:', error.response?.data || error.message);
     // 即使報錯也要送出 200，避免 LINE Webhook 報警
     res.status(200).send('OK');
   }
